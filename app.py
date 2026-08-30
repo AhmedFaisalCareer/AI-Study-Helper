@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import requests
 from google import genai
@@ -20,7 +21,6 @@ st.set_page_config(
 
 FIREBASE_URL = "https://ai-study-helper-69c91-default-rtdb.firebaseio.com"
 
-# Gemini API key from Streamlit Secrets
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
 client = genai.Client(
@@ -29,7 +29,7 @@ client = genai.Client(
 
 
 # ==========================================
-# FIREBASE FUNCTIONS
+# FIREBASE - SAVE PROFILE
 # ==========================================
 
 def save_profile(student_id, profile):
@@ -41,8 +41,18 @@ def save_profile(student_id, profile):
         json=profile
     )
 
-    return response.ok
+    st.write("Firebase status:", response.status_code)
+    st.write("Firebase response:", response.text)
 
+    if response.status_code == 200:
+        return True
+
+    return False
+
+
+# ==========================================
+# FIREBASE - GET PROFILE
+# ==========================================
 
 def get_profile(student_id):
 
@@ -50,11 +60,18 @@ def get_profile(student_id):
 
     response = requests.get(url)
 
-    if response.ok:
-        return response.json()
+    if response.status_code == 200:
+
+        data = response.json()
+
+        return data
 
     return None
 
+
+# ==========================================
+# FIREBASE - SAVE MESSAGE
+# ==========================================
 
 def save_message(student_id, question, answer):
 
@@ -70,8 +87,19 @@ def save_message(student_id, question, answer):
         json=data
     )
 
-    return response.ok
+    if response.status_code == 200:
+        return True
 
+    st.write("Firebase history error:")
+    st.write(response.status_code)
+    st.write(response.text)
+
+    return False
+
+
+# ==========================================
+# FIREBASE - GET HISTORY
+# ==========================================
 
 def get_history(student_id):
 
@@ -79,7 +107,7 @@ def get_history(student_id):
 
     response = requests.get(url)
 
-    if response.ok:
+    if response.status_code == 200:
 
         data = response.json()
 
@@ -101,13 +129,20 @@ def get_history(student_id):
     return []
 
 
+# ==========================================
+# FIREBASE - CLEAR HISTORY
+# ==========================================
+
 def clear_history(student_id):
 
     url = f"{FIREBASE_URL}/students/{student_id}/history.json"
 
     response = requests.delete(url)
 
-    return response.ok
+    if response.status_code == 200:
+        return True
+
+    return False
 
 
 # ==========================================
@@ -133,7 +168,7 @@ if st.session_state.profile is None:
     st.title("👋 Welcome to AI Study Helper")
 
     st.write(
-        "First, tell us a little about yourself."
+        "Before you start studying, please create your student profile."
     )
 
     st.divider()
@@ -205,13 +240,22 @@ if st.session_state.profile is None:
     ):
 
         if student_id == "":
-            st.warning("Please enter a Student ID.")
+
+            st.warning(
+                "Please enter a Student ID."
+            )
 
         elif name == "":
-            st.warning("Please enter your name.")
+
+            st.warning(
+                "Please enter your name."
+            )
 
         elif school == "":
-            st.warning("Please enter your school name.")
+
+            st.warning(
+                "Please enter your school name."
+            )
 
         else:
 
@@ -222,7 +266,12 @@ if st.session_state.profile is None:
                 .replace(" ", "_")
             )
 
-            old_profile = get_profile(student_id)
+            # Check if student already exists
+
+            old_profile = get_profile(
+                student_id
+            )
+
 
             # ==================================
             # RETURNING STUDENT
@@ -233,7 +282,9 @@ if st.session_state.profile is None:
                 st.session_state.profile = old_profile
                 st.session_state.student_id = student_id
 
-                old_history = get_history(student_id)
+                old_history = get_history(
+                    student_id
+                )
 
                 st.session_state.messages = []
 
@@ -255,6 +306,7 @@ if st.session_state.profile is None:
 
                 st.rerun()
 
+
             # ==================================
             # NEW STUDENT
             # ==================================
@@ -274,6 +326,7 @@ if st.session_state.profile is None:
                     profile
                 )
 
+
                 if saved:
 
                     st.session_state.profile = profile
@@ -281,7 +334,7 @@ if st.session_state.profile is None:
                     st.session_state.messages = []
 
                     st.success(
-                        "Profile created successfully!"
+                        "Profile saved successfully!"
                     )
 
                     st.rerun()
@@ -294,12 +347,13 @@ if st.session_state.profile is None:
 
 
 # ==========================================
-# MAIN STUDY APP
+# MAIN AI STUDY HELPER
 # ==========================================
 
 else:
 
     profile = st.session_state.profile
+
     student_id = st.session_state.student_id
 
 
@@ -345,6 +399,7 @@ else:
 
         st.divider()
 
+
         if st.button(
             "🔄 Change Profile",
             use_container_width=True
@@ -356,12 +411,15 @@ else:
 
             st.rerun()
 
+
         if st.button(
             "🗑️ Clear History",
             use_container_width=True
         ):
 
-            deleted = clear_history(student_id)
+            deleted = clear_history(
+                student_id
+            )
 
             if deleted:
 
@@ -405,7 +463,7 @@ else:
 
 
     # ======================================
-    # CHAT
+    # CHAT INPUT
     # ======================================
 
     user_message = st.chat_input(
@@ -415,6 +473,8 @@ else:
 
     if user_message:
 
+        # Save question to current session
+
         st.session_state.messages.append({
             "role": "user",
             "content": user_message
@@ -422,13 +482,16 @@ else:
 
 
         # ==================================
-        # GET LAST CONVERSATION
+        # GET LAST CONVERSATION FROM FIREBASE
         # ==================================
 
-        history = get_history(student_id)
+        history = get_history(
+            student_id
+        )
 
         last_question = ""
         last_answer = ""
+
 
         if history:
 
@@ -452,7 +515,7 @@ Subject: {profile['subject']}
 Learning Goal: {profile['goal']}
 
 
-LAST CONVERSATION
+PREVIOUS CONVERSATION
 
 Previous Question:
 {last_question}
@@ -466,7 +529,7 @@ CURRENT QUESTION
 {user_message}
 
 
-SETTINGS
+OUTPUT SETTINGS
 
 Output Type: {output_type}
 Difficulty: {difficulty}
@@ -478,9 +541,9 @@ INSTRUCTIONS
 2. Adjust the answer to the student's class level.
 3. Use simple language when possible.
 4. Remember the previous question and answer.
-5. If the student refers to something from the previous
-   question, use the previous conversation to understand it.
-6. Do not unnecessarily repeat information.
+5. If the student refers to the previous question,
+   use the previous conversation to understand it.
+6. Do not unnecessarily repeat the previous answer.
 7. For Summary, use important points.
 8. For Quiz, create questions and answers.
 9. For Detailed Notes, use headings and bullet points.
@@ -504,7 +567,7 @@ Answer the current question now.
 
 
         # ==================================
-        # ADD ANSWER TO CHAT
+        # DISPLAY ANSWER
         # ==================================
 
         st.session_state.messages.append({
@@ -517,26 +580,22 @@ Answer the current question now.
         # SAVE TO FIREBASE
         # ==================================
 
-        saved = save_message(
+        save_message(
             student_id,
             user_message,
             answer
         )
 
-        if not saved:
-
-            st.warning(
-                "The answer was generated but could not be saved to Firebase."
-            )
-
 
     # ======================================
-    # DISPLAY CHAT
+    # DISPLAY CHAT HISTORY
     # ======================================
 
     for message in st.session_state.messages:
 
-        with st.chat_message(message["role"]):
+        with st.chat_message(
+            message["role"]
+        ):
 
             st.write(
                 message["content"]
@@ -553,7 +612,8 @@ Answer the current question now.
 
     st.write(
         "🤖 AI Study Helper helps students study any topic "
-        "using AI. Your profile and study history are saved "
-        "in Firebase, allowing the assistant to remember "
-        "your previous conversation."
+        "using AI. Student profiles and study history are "
+        "saved in Firebase so the AI can remember previous "
+        "questions and answers."
     )
+```
