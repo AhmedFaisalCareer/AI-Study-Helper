@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import requests
 from google import genai
@@ -616,4 +615,4 @@ Answer the current question now.
         "saved in Firebase so the AI can remember previous "
         "questions and answers."
     )
-```
+
