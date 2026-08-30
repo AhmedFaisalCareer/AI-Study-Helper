@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import requests
 from google import genai
@@ -558,4 +557,3 @@ Answer the current question now.
         "in Firebase, allowing the assistant to remember "
         "your previous conversation."
     )
-```
