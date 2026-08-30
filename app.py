@@ -1,235 +1,561 @@
+```python
 import streamlit as st
+import requests
 from google import genai
-import json
+
+
+# ==========================================
+# PAGE SETTINGS
+# ==========================================
 
 st.set_page_config(
-    page_title="AI Quiz Generator",
-    page_icon="📚"
-)
-
-st.title("📚 AI Quiz Generator")
-st.subheader("Generate quizzes with AI")
-
-st.write(
-    "Create a personalized quiz by choosing a topic, "
-    "quiz type, difficulty, and number of questions."
-)
-
-# Put your Gemini API key here
-api_key = "Gemini API key 
-
-# Create Gemini client
-client = genai.Client(api_key=api_key)
-
-
-subject = st.text_input(
-    "📖 Enter your subject or topic",
-    placeholder="Example: Photosynthesis"
-)
-
-quiz_type = st.selectbox(
-    "📝 Select quiz type",
-    [
-        "Multiple Choice",
-        "True/False",
-        "Fill in the Blank"
-    ]
-)
-
-difficulty = st.selectbox(
-    "🎯 Select difficulty",
-    [
-        "Easy",
-        "Medium",
-        "Hard"
-    ]
-)
-
-num_questions = st.number_input(
-    "🔢 Number of questions",
-    min_value=1,
-    max_value=20,
-    value=5
+    page_title="🤖 AI Study Helper",
+    page_icon="🤖",
+    layout="wide"
 )
 
 
-if st.button("🚀 Generate Quiz", use_container_width=True):
+# ==========================================
+# SETTINGS
+# ==========================================
 
-    if subject.strip() == "":
-        st.warning("⚠️ Please enter a subject or topic.")
+FIREBASE_URL = "https://ai-study-helper-69c91-default-rtdb.firebaseio.com"
 
-    else:
+# Gemini API key from Streamlit Secrets
+GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
-        prompt = f"""
-Create a {difficulty} level {quiz_type} quiz about {subject}.
-
-Create exactly {num_questions} questions.
-
-Return ONLY valid JSON.
-
-For Multiple Choice:
-
-{{
-    "questions": [
-        {{
-            "question": "Question text",
-            "options": [
-                "Option A",
-                "Option B",
-                "Option C",
-                "Option D"
-            ],
-            "answer": "Correct option"
-        }}
-    ]
-}}
-
-For True/False:
-
-{{
-    "questions": [
-        {{
-            "question": "Question text",
-            "answer": "True"
-        }}
-    ]
-}}
-
-For Fill in the Blank:
-
-{{
-    "questions": [
-        {{
-            "question": "Question with a blank",
-            "answer": "Correct answer"
-        }}
-    ]
-}}
-
-Do not add markdown.
-Do not add explanations.
-Return only JSON.
-"""
-
-        with st.spinner("🤖 Generating your quiz..."):
-
-            try:
-
-                response = client.models.generate_content(
-                    model="gemini-3-flash-preview",
-                    contents=prompt
-                )
-
-                result = response.text.strip()
-
-                if result.startswith("```json"):
-                    result = result[7:]
-
-                if result.startswith("```"):
-                    result = result[3:]
-
-                if result.endswith("```"):
-                    result = result[:-3]
-
-                result = result.strip()
-
-                quiz_data = json.loads(result)
-
-                st.session_state.quiz = quiz_data
-                st.session_state.quiz_type = quiz_type
-                st.session_state.subject = subject
-
-                st.success("✅ Quiz generated successfully!")
-
-            except json.JSONDecodeError:
-
-                st.error(
-                    "❌ Gemini returned an invalid format. "
-                    "Please try again."
-                )
-
-            except Exception as e:
-
-                st.error("❌ Something went wrong.")
-                st.write(str(e))
+client = genai.Client(
+    api_key=GEMINI_API_KEY
+)
 
 
-if "quiz" in st.session_state:
+# ==========================================
+# FIREBASE FUNCTIONS
+# ==========================================
+
+def save_profile(student_id, profile):
+
+    url = f"{FIREBASE_URL}/students/{student_id}/profile.json"
+
+    response = requests.put(
+        url,
+        json=profile
+    )
+
+    return response.ok
+
+
+def get_profile(student_id):
+
+    url = f"{FIREBASE_URL}/students/{student_id}/profile.json"
+
+    response = requests.get(url)
+
+    if response.ok:
+        return response.json()
+
+    return None
+
+
+def save_message(student_id, question, answer):
+
+    url = f"{FIREBASE_URL}/students/{student_id}/history.json"
+
+    data = {
+        "question": question,
+        "answer": answer
+    }
+
+    response = requests.post(
+        url,
+        json=data
+    )
+
+    return response.ok
+
+
+def get_history(student_id):
+
+    url = f"{FIREBASE_URL}/students/{student_id}/history.json"
+
+    response = requests.get(url)
+
+    if response.ok:
+
+        data = response.json()
+
+        if data:
+
+            history = []
+
+            for key in data:
+
+                item = data[key]
+
+                history.append({
+                    "question": item.get("question", ""),
+                    "answer": item.get("answer", "")
+                })
+
+            return history
+
+    return []
+
+
+def clear_history(student_id):
+
+    url = f"{FIREBASE_URL}/students/{student_id}/history.json"
+
+    response = requests.delete(url)
+
+    return response.ok
+
+
+# ==========================================
+# SESSION STATE
+# ==========================================
+
+if "profile" not in st.session_state:
+    st.session_state.profile = None
+
+if "student_id" not in st.session_state:
+    st.session_state.student_id = None
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+
+# ==========================================
+# PROFILE PAGE
+# ==========================================
+
+if st.session_state.profile is None:
+
+    st.title("👋 Welcome to AI Study Helper")
+
+    st.write(
+        "First, tell us a little about yourself."
+    )
 
     st.divider()
 
-    st.header("🧠 Your Quiz")
+    st.subheader("👤 Student Profile")
 
-    st.write(
-        f"**Topic:** {st.session_state.subject}"
+    student_id = st.text_input(
+        "Student ID / Username",
+        placeholder="Example: ahmed123"
     )
 
-    st.write(
-        f"**Quiz Type:** {st.session_state.quiz_type}"
+    name = st.text_input(
+        "Your Name",
+        placeholder="Enter your name"
     )
 
-    quiz_data = st.session_state.quiz
-    quiz_type = st.session_state.quiz_type
+    student_class = st.selectbox(
+        "Your Class / Grade",
+        [
+            "Class 6",
+            "Class 7",
+            "Class 8",
+            "Class 9",
+            "Class 10",
+            "O Level",
+            "A Level",
+            "Other"
+        ]
+    )
 
+    school = st.text_input(
+        "School Name",
+        placeholder="Enter your school name"
+    )
 
-    for i, question in enumerate(
-        quiz_data["questions"]
-    ):
+    subject = st.selectbox(
+        "Main Subject",
+        [
+            "Mathematics",
+            "Physics",
+            "Chemistry",
+            "Biology",
+            "Computer Science",
+            "English",
+            "Geography",
+            "History",
+            "Islamiat",
+            "Other"
+        ]
+    )
 
-        st.subheader(
-            f"Question {i + 1}"
-        )
-
-        st.write(
-            question["question"]
-        )
-
-
-        if quiz_type == "Multiple Choice":
-
-            st.radio(
-                "Choose your answer:",
-                question["options"],
-                key=f"answer_{i}"
-            )
-
-
-        elif quiz_type == "True/False":
-
-            st.radio(
-                "Choose your answer:",
-                ["True", "False"],
-                key=f"answer_{i}"
-            )
-
-
-        elif quiz_type == "Fill in the Blank":
-
-            st.text_input(
-                "Your answer:",
-                key=f"answer_{i}"
-            )
-
+    learning_goal = st.selectbox(
+        "What do you want help with?",
+        [
+            "Homework",
+            "Exam Preparation",
+            "Understanding Concepts",
+            "Making Notes",
+            "Practice Questions",
+            "Revision"
+        ]
+    )
 
     st.divider()
-
-    with st.expander("🔐 Show Correct Answers"):
-
-        for i, question in enumerate(
-            quiz_data["questions"]
-        ):
-
-            st.write(
-                f"**Question {i + 1}:** "
-                f"{question['answer']}"
-            )
-
 
     if st.button(
-        "🔄 Generate Another Quiz",
+        "🚀 Start Studying",
         use_container_width=True
     ):
 
-        del st.session_state.quiz
+        if student_id == "":
+            st.warning("Please enter a Student ID.")
 
-        st.rerun()
+        elif name == "":
+            st.warning("Please enter your name.")
+
+        elif school == "":
+            st.warning("Please enter your school name.")
+
+        else:
+
+            student_id = (
+                student_id
+                .strip()
+                .lower()
+                .replace(" ", "_")
+            )
+
+            old_profile = get_profile(student_id)
+
+            # ==================================
+            # RETURNING STUDENT
+            # ==================================
+
+            if old_profile:
+
+                st.session_state.profile = old_profile
+                st.session_state.student_id = student_id
+
+                old_history = get_history(student_id)
+
+                st.session_state.messages = []
+
+                for item in old_history:
+
+                    st.session_state.messages.append({
+                        "role": "user",
+                        "content": item["question"]
+                    })
+
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": item["answer"]
+                    })
+
+                st.success(
+                    "Welcome back! Your previous history has been loaded."
+                )
+
+                st.rerun()
+
+            # ==================================
+            # NEW STUDENT
+            # ==================================
+
+            else:
+
+                profile = {
+                    "name": name,
+                    "class": student_class,
+                    "school": school,
+                    "subject": subject,
+                    "goal": learning_goal
+                }
+
+                saved = save_profile(
+                    student_id,
+                    profile
+                )
+
+                if saved:
+
+                    st.session_state.profile = profile
+                    st.session_state.student_id = student_id
+                    st.session_state.messages = []
+
+                    st.success(
+                        "Profile created successfully!"
+                    )
+
+                    st.rerun()
+
+                else:
+
+                    st.error(
+                        "Could not save your profile to Firebase."
+                    )
+
+
+# ==========================================
+# MAIN STUDY APP
+# ==========================================
+
+else:
+
+    profile = st.session_state.profile
+    student_id = st.session_state.student_id
+
+
+    # ======================================
+    # HEADER
+    # ======================================
+
+    st.title("🤖 AI Study Helper")
+
+    st.write(
+        f"Welcome, **{profile['name']}**! "
+        f"Let's study **{profile['subject']}** together."
+    )
+
+
+    # ======================================
+    # SIDEBAR
+    # ======================================
+
+    with st.sidebar:
+
+        st.header("👤 Student Profile")
+
+        st.write(
+            f"**Name:** {profile['name']}"
+        )
+
+        st.write(
+            f"**Class:** {profile['class']}"
+        )
+
+        st.write(
+            f"**School:** {profile['school']}"
+        )
+
+        st.write(
+            f"**Subject:** {profile['subject']}"
+        )
+
+        st.write(
+            f"**Goal:** {profile['goal']}"
+        )
+
+        st.divider()
+
+        if st.button(
+            "🔄 Change Profile",
+            use_container_width=True
+        ):
+
+            st.session_state.profile = None
+            st.session_state.student_id = None
+            st.session_state.messages = []
+
+            st.rerun()
+
+        if st.button(
+            "🗑️ Clear History",
+            use_container_width=True
+        ):
+
+            deleted = clear_history(student_id)
+
+            if deleted:
+
+                st.session_state.messages = []
+
+                st.success(
+                    "History cleared."
+                )
+
+                st.rerun()
+
+            else:
+
+                st.error(
+                    "Could not clear history."
+                )
+
+
+    # ======================================
+    # AI OPTIONS
+    # ======================================
+
+    output_type = st.selectbox(
+        "Choose output type",
+        [
+            "Summary",
+            "Quiz",
+            "Detailed Notes",
+            "Mind Map"
+        ]
+    )
+
+    difficulty = st.selectbox(
+        "Choose difficulty",
+        [
+            "Beginner",
+            "Intermediate",
+            "Advanced"
+        ]
+    )
+
+
+    # ======================================
+    # CHAT
+    # ======================================
+
+    user_message = st.chat_input(
+        "Ask something about your study topic..."
+    )
+
+
+    if user_message:
+
+        st.session_state.messages.append({
+            "role": "user",
+            "content": user_message
+        })
+
+
+        # ==================================
+        # GET LAST CONVERSATION
+        # ==================================
+
+        history = get_history(student_id)
+
+        last_question = ""
+        last_answer = ""
+
+        if history:
+
+            last_question = history[-1]["question"]
+            last_answer = history[-1]["answer"]
+
+
+        # ==================================
+        # AI PROMPT
+        # ==================================
+
+        prompt = f"""
+You are an AI Study Helper.
+
+STUDENT PROFILE
+
+Name: {profile['name']}
+Class: {profile['class']}
+School: {profile['school']}
+Subject: {profile['subject']}
+Learning Goal: {profile['goal']}
+
+
+LAST CONVERSATION
+
+Previous Question:
+{last_question}
+
+Previous Answer:
+{last_answer}
+
+
+CURRENT QUESTION
+
+{user_message}
+
+
+SETTINGS
+
+Output Type: {output_type}
+Difficulty: {difficulty}
+
+
+INSTRUCTIONS
+
+1. Answer the current question clearly.
+2. Adjust the answer to the student's class level.
+3. Use simple language when possible.
+4. Remember the previous question and answer.
+5. If the student refers to something from the previous
+   question, use the previous conversation to understand it.
+6. Do not unnecessarily repeat information.
+7. For Summary, use important points.
+8. For Quiz, create questions and answers.
+9. For Detailed Notes, use headings and bullet points.
+10. For Mind Map, create a clear text hierarchy.
+11. Help the student understand the topic.
+
+Answer the current question now.
+"""
+
+
+        # ==================================
+        # GEMINI
+        # ==================================
+
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt
+        )
+
+        answer = response.text
+
+
+        # ==================================
+        # ADD ANSWER TO CHAT
+        # ==================================
+
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": answer
+        })
+
+
+        # ==================================
+        # SAVE TO FIREBASE
+        # ==================================
+
+        saved = save_message(
+            student_id,
+            user_message,
+            answer
+        )
+
+        if not saved:
+
+            st.warning(
+                "The answer was generated but could not be saved to Firebase."
+            )
+
+
+    # ======================================
+    # DISPLAY CHAT
+    # ======================================
+
+    for message in st.session_state.messages:
+
+        with st.chat_message(message["role"]):
+
+            st.write(
+                message["content"]
+            )
+
+
+    # ======================================
+    # ABOUT
+    # ======================================
+
+    st.divider()
+
+    st.subheader("ℹ️ About")
+
+    st.write(
+        "🤖 AI Study Helper helps students study any topic "
+        "using AI. Your profile and study history are saved "
+        "in Firebase, allowing the assistant to remember "
+        "your previous conversation."
+    )
+```
