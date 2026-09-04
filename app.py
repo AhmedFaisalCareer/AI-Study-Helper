@@ -444,10 +444,13 @@ else:
     output_type = st.selectbox(
         "Choose output type",
         [
-            "Summary",
             "Quiz",
             "Detailed Notes",
-            "Mind Map"
+            "Mind Map",
+            "MCQS",
+            "Explain Concepts",
+            "Practice Questions",
+            "Revision Notes"
         ]
     )
 
@@ -615,4 +618,3 @@ Answer the current question now.
         "saved in Firebase so the AI can remember previous "
         "questions and answers."
     )
-
